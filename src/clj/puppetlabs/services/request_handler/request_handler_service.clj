@@ -3,6 +3,7 @@
             [puppetlabs.services.protocols.request-handler :as handler]
             [puppetlabs.services.request-handler.request-handler-core :as request-handler-core]
             [puppetlabs.trapperkeeper.services :as tk-services]
+            [puppetlabs.trapperkeeper.services.metrics.tracing-core :as tracing]
             [clojure.tools.logging :as log]
             [puppetlabs.i18n.core :as i18n]))
 
@@ -23,11 +24,10 @@
                             (i18n/trs "The ''master.allow-header-cert-info'' setting is deprecated and will be ignored in favor of the ''authorization.allow-header-cert-info'' setting because the ''jruby-puppet.use-legacy-auth-conf'' setting is ''false''.")
                             (i18n/trs "Remove the ''master.allow-header-cert-info'' setting.")))))
       (assoc context :request-handler
-                     (request-handler-core/build-request-handler
-                      jruby-service
-                      (request-handler-core/config->request-handler-settings
-                       config)
-                      current-code-id))))
+             (-> (request-handler-core/build-request-handler
+                  jruby-service
+                  (request-handler-core/config->request-handler-settings config)
+                  current-code-id)))))
   (handle-request
     [this request]
     (let [handler (:request-handler (tk-services/service-context this))]

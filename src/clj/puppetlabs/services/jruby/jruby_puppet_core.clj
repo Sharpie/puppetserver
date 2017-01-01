@@ -12,6 +12,7 @@
             [clojure.tools.logging :as log]
             [clojure.string :as str])
   (:import (com.puppetlabs.puppetserver PuppetProfiler JRubyPuppet)
+           (io.opentracing Tracer)
            (clojure.lang IFn)
            (java.util HashMap)))
 
@@ -106,7 +107,8 @@
 
 (schema/defn get-initialize-pool-instance-fn :- IFn
   [config :- jruby-puppet-schemas/JRubyPuppetConfig
-   profiler :- (schema/maybe PuppetProfiler)]
+   profiler :- (schema/maybe PuppetProfiler)
+   tracer :- (schema/maybe Tracer)]
   (fn [jruby-instance]
     (let [{:keys [http-client-ssl-protocols
                   http-client-cipher-suites
@@ -126,6 +128,7 @@
           (.put puppetserver-config "cipher_suites" (into-array String http-client-cipher-suites)))
         (doto puppetserver-config
           (.put "profiler" profiler)
+          (.put "tracer" tracer)
           (.put "environment_registry" env-registry)
           (.put "http_connect_timeout_milliseconds" http-client-connect-timeout-milliseconds)
           (.put "http_idle_timeout_milliseconds" http-client-idle-timeout-milliseconds)
@@ -199,8 +202,9 @@
   [jruby-puppet-config :- jruby-puppet-schemas/JRubyPuppetConfig
    jruby-config :- {schema/Keyword schema/Any}
    agent-shutdown-fn :- IFn
-   profiler :- (schema/maybe PuppetProfiler)]
-  (let [initialize-pool-instance-fn (get-initialize-pool-instance-fn jruby-puppet-config profiler)
+   profiler :- (schema/maybe PuppetProfiler)
+   tracer :- (schema/maybe Tracer)]
+  (let [initialize-pool-instance-fn (get-initialize-pool-instance-fn jruby-puppet-config profiler tracer)
         lifecycle-fns {:shutdown-on-error agent-shutdown-fn
                        :initialize-pool-instance initialize-pool-instance-fn
                        :cleanup cleanup-fn}
@@ -232,11 +236,12 @@
   ([raw-config :- {:jruby-puppet {schema/Keyword schema/Any}
                    (schema/optional-key :http-client) {schema/Keyword schema/Any}
                    schema/Keyword schema/Any}]
-   (initialize-and-create-jruby-config raw-config nil (fn []) false))
+   (initialize-and-create-jruby-config raw-config nil (fn []) false nil))
   ([raw-config :- {schema/Keyword schema/Any}
     profiler :- (schema/maybe PuppetProfiler)
     agent-shutdown-fn :- IFn
-    warn-legacy-auth-conf? :- schema/Bool]
+    warn-legacy-auth-conf? :- schema/Bool
+    tracer :- (schema/maybe Tracer)]
    (let [jruby-puppet-config (initialize-puppet-config
                               (extract-http-config (:http-client raw-config))
                               (extract-puppet-config (:jruby-puppet raw-config)))
@@ -249,7 +254,7 @@
         (i18n/trs "The 'jruby-puppet.use-legacy-auth-conf' setting is set to ''true''.")
         (i18n/trs "Support for the legacy Puppet auth.conf file is deprecated and will be removed in a future release.")
         (i18n/trs "Change this setting to 'false' and migrate your authorization rule definitions in the /etc/puppetlabs/puppet/auth.conf file to the /etc/puppetlabs/puppetserver/conf.d/auth.conf file.")))
-     (create-jruby-config jruby-puppet-config uninitialized-jruby-config agent-shutdown-fn profiler))))
+     (create-jruby-config jruby-puppet-config uninitialized-jruby-config agent-shutdown-fn profiler tracer))))
 
 (def EnvironmentClassInfoCacheEntry
   "Data structure that holds per-environment cache information for the

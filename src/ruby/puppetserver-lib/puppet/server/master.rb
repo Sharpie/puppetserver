@@ -39,7 +39,9 @@ class Puppet::Server::Master
 
   def handleRequest(request)
     response = {}
+    span = OpenTracing.global_tracer.extract(request["uri"], OpenTracing::FORMAT_TEXT_MAP, request["headers"])
     process(request, response)
+    span.finish
     # 'process' returns only the status -
     # `response` now contains all of the response data
 

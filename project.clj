@@ -63,6 +63,7 @@
                  [puppetlabs/trapperkeeper-authorization]
                  [puppetlabs/trapperkeeper-scheduler]
                  [puppetlabs/trapperkeeper-status]
+                 [puppetlabs/trapperkeeper-metrics "0.5.1-SNAPSHOT" :exclusions [com.fasterxml.jackson.core/jackson-databind com.fasterxml.jackson.core/jackson-annotations]]
                  [puppetlabs/kitchensink]
                  [puppetlabs/ssl-utils]
                  [puppetlabs/ring-middleware]
@@ -174,5 +175,5 @@
   ;; you should take care to exclude the things that you don't want
   ;; in your final jar.  Here is an example of how you could exclude
   ;; that from the final uberjar:
-  :uberjar-exclusions [#"META-INF/jruby.home/lib/ruby/shared/org/bouncycastle"]
-  )
+  :uberjar-exclusions [#"META-INF/jruby.home/lib/ruby/shared/org/bouncycastle"])
+  

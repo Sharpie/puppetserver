@@ -5,6 +5,7 @@ require 'puppet/environments'
 
 require 'puppet/server/logger'
 require 'puppet/server/jvm_profiler'
+require 'puppet/server/jvm_tracer'
 require 'puppet/server/http_client'
 require 'puppet/server/auth_config_loader'
 require 'puppet/server/auth_provider'
@@ -23,6 +24,10 @@ class Puppet::Server::Config
     if puppet_server_config["profiler"]
       @profiler = Puppet::Server::JvmProfiler.new(puppet_server_config["profiler"])
       Puppet::Util::Profiler.add_profiler(@profiler)
+    end
+
+    if puppet_server_config.key?("tracer")
+      OpenTracing.global_tracer = Puppet::Util::Tracing::JVMTracer.new(puppet_server_config["tracer"])
     end
 
     Puppet::Server::HttpClient.initialize_settings(puppet_server_config)

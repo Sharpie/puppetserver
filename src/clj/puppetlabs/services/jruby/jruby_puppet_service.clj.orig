@@ -28,8 +28,7 @@
                         (get-config)
                         (get-profiler)
                         (partial shutdown-on-error (tk-services/service-id this))
-                        true
-                        tracer)
+                        true)
           _ (core/add-facter-jar-to-system-classloader! (:ruby-load-path jruby-config))
           pool-context (create-pool jruby-config)]
       (-> context
