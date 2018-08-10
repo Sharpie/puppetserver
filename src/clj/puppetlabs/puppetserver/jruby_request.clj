@@ -7,7 +7,7 @@
             [puppetlabs.ring-middleware.utils :as ringutils]
             [puppetlabs.services.protocols.jruby-puppet :as jruby-puppet]
             [puppetlabs.services.protocols.jruby-metrics :as jruby-metrics]
-            [puppetlabs.services.jruby.jruby-puppet-service :as jruby]
+            [puppetlabs.services.jruby-pool-manager.jruby-core :as jruby-core]
             [schema.core :as schema]
             [puppetlabs.puppetserver.common :as ps-common]
             [puppetlabs.i18n.core :as i18n]))
@@ -17,7 +17,7 @@
   [x]
   (when (map? x)
     (= (:kind x)
-       :puppetlabs.services.jruby-pool-manager.jruby-core/jruby-timeout)))
+       ::jruby-core/jruby-timeout)))
 
 (defn output-error
   [{:keys [uri]} {:keys [msg]} http-status]
@@ -38,14 +38,21 @@
      (catch ringutils/service-unavailable? e
        (output-error request e 503)))))
 
-(defn wrap-with-jruby-instance
+(schema/defn ^:always-validate wrap-with-jruby-instance :- IFn
   "Middleware fn that borrows a jruby instance from the `jruby-service` and makes
-  it available in the request as `:jruby-instance`"
-  [handler jruby-service]
+  the `com.puppetlabs.puppetserver.JRubyPuppet` interface available in the request
+  map as `:jruby-instance` and the `com.puppetlabs.jruby_utils.jrubyScriptingContainer`
+  interface available as `:jruby-container`."
+  [handler :- IFn
+   jruby-service :- (schema/protocol jruby-puppet/JRubyPuppetService)]
   (fn [request]
-    (jruby/with-jruby-puppet
-     jruby-puppet jruby-service {:request (dissoc request :ssl-client-cert)}
-     (handler (assoc request :jruby-instance jruby-puppet)))))
+    (let [jruby-pool (jruby-puppet/get-pool-context jruby-service)]
+      (let [borrow-reason {:request (dissoc request :ssl-client-cert)}]
+        (jruby-core/with-jruby-instance jruby-instance jruby-pool borrow-reason
+          (-> request
+              (assoc :jruby-instance (:jruby-puppet jruby-instance))
+              (assoc :jruby-container (:scripting-container jruby-instance))
+              handler))))))
 
 (schema/defn ^:always-validate
   wrap-with-request-queue-limit :- IFn
