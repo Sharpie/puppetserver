@@ -26,20 +26,23 @@
   [setting]
   "Given the value of a Puppet setting which contains a munged HTTP header name,
   convert it to the actual header name in all lower-case."
-  (->> (string/split setting #"_")
-       rest
-       (string/join "-")
-       string/lower-case))
+  (when setting
+    (->> (string/split setting #"_")
+         rest
+         (string/join "-")
+         string/lower-case)))
 
 (defn config->request-handler-settings
   "Given an entire Puppet Server configuration map, return only those keys
   which are required by the request handler service."
-  [{:keys [puppetserver master]}]
+  [{:keys [puppetserver master jruby-puppet]}]
   {:allow-header-cert-info   (true? (:allow-header-cert-info master))
    :ssl-client-verify-header (unmunge-http-header-name
                                (:ssl-client-verify-header puppetserver))
    :ssl-client-header        (unmunge-http-header-name
-                               (:ssl-client-header puppetserver))})
+                               (:ssl-client-header puppetserver))
+   :max-queued-requests (get jruby-puppet :max-queued-requests 0)
+   :max-retry-delay (get jruby-puppet :max-retry-delay 1800)})
 
 (defn response->map
   "Converts a JRubyPuppetResponse instance to a map."
@@ -273,12 +276,24 @@
          (.handleRequest (:jruby-instance request))
          response->map)))
 
+(defn maybe-wrap-request-limit
+  "Applies a limit for the number of outstanding JRuby requests if
+  max-retry-delay has been set to a positive number in jruby-puppet config"
+  [handler metrics-service {:keys [max-queued-requests max-retry-delay]}]
+  (if (pos? max-queued-requests)
+    (jruby-request/wrap-with-request-queue-limit handler
+                                                 metrics-service
+                                                 max-queued-requests
+                                                 max-retry-delay)
+    handler))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Public
 
 (defn build-request-handler
   "Build the main request handler fn for JRuby requests."
-  [jruby-service config current-code-id]
+  [jruby-service metrics-service config current-code-id]
   (-> (jruby-request-handler config current-code-id)
       (jruby-request/wrap-with-jruby-instance jruby-service)
-      jruby-request/wrap-with-error-handling))
+      jruby-request/wrap-with-error-handling
+      (maybe-wrap-request-limit metrics-service config)))

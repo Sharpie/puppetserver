@@ -27,6 +27,7 @@
             [puppetlabs.trapperkeeper.services.metrics.metrics-service :as metrics]
             [puppetlabs.services.jruby.jruby-metrics-service :as jruby-metrics-service]
             [puppetlabs.trapperkeeper.services.status.status-service :as status-service]
+            [puppetlabs.services.protocols.jruby-metrics :as metrics-protocol]
             [puppetlabs.services.protocols.jruby-puppet :as jruby-protocol]
             [puppetlabs.puppetserver.testutils :as testutils]
             [puppetlabs.services.jruby-pool-manager.jruby-core :as jruby-core]
@@ -377,7 +378,9 @@
                             (jruby-pool-manager-core/create-pool-context
                              (jruby-core/initialize-config {:gem-home "foo"
                                                             :gem-path "foo:foobar"
-                                                            :ruby-load-path ["bar"]}))))]
+                                                            :ruby-load-path ["bar"]}))))
+          dummy-metrics (reify metrics-protocol/JRubyMetricsService)
+          dummy-config (core/config->request-handler-settings {})]
       (logutils/with-test-logging
        (testing "slingshot bad requests translated to ring response"
          (let [bad-message "it's real bad"]
@@ -387,12 +390,18 @@
                                                   bad-message))
                          jruby-core/return-to-pool (fn [_ _ _] #())]
              (with-redefs [jruby-core/borrow-from-pool-with-timeout (fn [_ _ _] {})]
-               (let [request-handler (core/build-request-handler dummy-service {} (constantly nil))
+               (let [request-handler (core/build-request-handler dummy-service
+                                                                 dummy-metrics
+                                                                 dummy-config
+                                                                 (constantly nil))
                      response (request-handler {:body (StringReader. "blah")})]
                  (is (= 400 (:status response)) "Unexpected response status")
                  (is (= bad-message (:body response)) "Unexpected response body")))
              (with-redefs [jruby-core/borrow-from-pool-with-timeout (fn [_ _ _] nil)]
-               (let [request-handler (core/build-request-handler dummy-service {} (constantly nil))
+               (let [request-handler (core/build-request-handler dummy-service
+                                                                 dummy-metrics
+                                                                 dummy-config
+                                                                 (constantly nil))
                      response (request-handler {:body (StringReader. "")})]
                  (is (= 503 (:status response)) "Unexpected response status")
                  (is (.startsWith
