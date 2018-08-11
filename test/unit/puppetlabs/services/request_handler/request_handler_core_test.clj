@@ -380,7 +380,12 @@
                                                             :gem-path "foo:foobar"
                                                             :ruby-load-path ["bar"]}))))
           dummy-metrics (reify metrics-protocol/JRubyMetricsService)
-          dummy-config (core/config->request-handler-settings {})]
+          dummy-config (core/config->request-handler-settings {})
+          request-handler (core/build-request-handler core/puppet-master-handler
+                                                      dummy-service
+                                                      dummy-metrics
+                                                      dummy-config
+                                                      (constantly nil))]
       (logutils/with-test-logging
        (testing "slingshot bad requests translated to ring response"
          (let [bad-message "it's real bad"]
@@ -390,19 +395,11 @@
                                                   bad-message))
                          jruby-core/return-to-pool (fn [_ _ _] #())]
              (with-redefs [jruby-core/borrow-from-pool-with-timeout (fn [_ _ _] {})]
-               (let [request-handler (core/build-request-handler dummy-service
-                                                                 dummy-metrics
-                                                                 dummy-config
-                                                                 (constantly nil))
-                     response (request-handler {:body (StringReader. "blah")})]
+               (let [response (request-handler {:body (StringReader. "blah")})]
                  (is (= 400 (:status response)) "Unexpected response status")
                  (is (= bad-message (:body response)) "Unexpected response body")))
              (with-redefs [jruby-core/borrow-from-pool-with-timeout (fn [_ _ _] nil)]
-               (let [request-handler (core/build-request-handler dummy-service
-                                                                 dummy-metrics
-                                                                 dummy-config
-                                                                 (constantly nil))
-                     response (request-handler {:body (StringReader. "")})]
+               (let [response (request-handler {:body (StringReader. "")})]
                  (is (= 503 (:status response)) "Unexpected response status")
                  (is (.startsWith
                       (:body response)

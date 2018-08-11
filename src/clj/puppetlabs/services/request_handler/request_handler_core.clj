@@ -4,6 +4,7 @@
            (com.puppetlabs.puppetserver JRubyPuppetResponse))
   (:require [clojure.tools.logging :as log]
             [clojure.string :as string]
+            [clojure.walk :as walk]
             [puppetlabs.ring-middleware.utils :as ringutils]
             [puppetlabs.ssl-utils.core :as ssl-utils]
             [puppetlabs.puppetserver.common :as ps-common]
@@ -263,17 +264,30 @@
       (assoc-in request [:params "code_id"] (current-code-id env)))
     request))
 
+(defn puppet-master-handler
+  "A request handler fn that dispatches a request map produced by
+  as-jruby-request to the handleRequest method of the JRubyPuppet interface.
+  This method is implemented by the Puppet::Server::Master class in Ruby and
+  is the entrypoint to the Puppet Master API."
+  [ring-request ruby-request]
+  (let [puppet-server-instance (:jruby-instance ring-request)]
+    (.handleRequest puppet-server-instance ruby-request)))
+
 (defn jruby-request-handler
-  "Build a request handler fn that processes a request using a JRubyPuppet instance"
-  [config current-code-id]
+  "Middleware that transforms a Ring request for processing by JRuby and
+  then dispatches to the supplied handler fn."
+  [handler config current-code-id]
   (fn [request]
     (->> request
          wrap-params-for-jruby
          (with-code-id current-code-id)
          (as-jruby-request config)
-         clojure.walk/stringify-keys
+         walk/stringify-keys
          make-request-mutable
-         (.handleRequest (:jruby-instance request))
+         ;; The handler gets both the original Ring request map, which contains
+         ;; interfaces to the JRuby interpreter and the transformed
+         ;; Ruby request map.
+         (handler request)
          response->map)))
 
 (defn maybe-wrap-request-limit
@@ -291,9 +305,18 @@
 ;;; Public
 
 (defn build-request-handler
-  "Build the main request handler fn for JRuby requests."
-  [jruby-service metrics-service config current-code-id]
-  (-> (jruby-request-handler config current-code-id)
+  "Build a request handler fn for JRuby requests. This function takes a Ring
+  handler and wraps it with middleware that handle object transformation,
+  error handling, rate limiting, and the borrowing of a JRuby interpreter.
+
+  The Ring handler will be passed two arguments:
+
+    - The original Ring request map, which contains interfaces to JRuby
+    - The transformed Ruby request map
+
+  The Ring handler must produce a JRubyPuppetResponse instance."
+  [handler jruby-service metrics-service config current-code-id]
+  (-> (jruby-request-handler handler config current-code-id)
       (jruby-request/wrap-with-jruby-instance jruby-service)
       jruby-request/wrap-with-error-handling
       (maybe-wrap-request-limit metrics-service config)))

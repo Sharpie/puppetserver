@@ -14,16 +14,9 @@
    [:VersionedCodeService current-code-id]
    [:JRubyPuppetService]
    [:JRubyMetricsService]]
-  (init [this context]
-    (let [config (get-config)
-          jruby-service (tk-services/get-service this :JRubyPuppetService)
-          metrics-service (tk-services/get-service this :JRubyMetricsService)
-          request-handler (request-handler-core/build-request-handler
-                            jruby-service
-                            metrics-service
-                            (request-handler-core/config->request-handler-settings
-                              config)
-                            current-code-id)]
+  (init
+    [this context]
+    (let [config (request-handler-core/config->request-handler-settings (get-config))]
       (when (contains? (:master config) :allow-header-cert-info)
         (if (true? (get-in config [:jruby-puppet :use-legacy-auth-conf]))
           (log/warn (format "%s %s"
@@ -32,7 +25,21 @@
           (log/warn (format "%s %s"
                             (i18n/trs "The ''master.allow-header-cert-info'' setting is deprecated and will be ignored in favor of the ''authorization.allow-header-cert-info'' setting because the ''jruby-puppet.use-legacy-auth-conf'' setting is ''false''.")
                             (i18n/trs "Remove the ''master.allow-header-cert-info'' setting.")))))
+      (assoc context :config config)))
+  (start
+    [this context]
+    (let [request-handler (handler/get-wrapped-handler this request-handler-core/puppet-master-handler)]
       (assoc context :request-handler request-handler)))
+  (get-wrapped-handler
+    [this handler]
+    (let [config (:config (tk-services/service-context this))
+          jruby-service (tk-services/get-service this :JRubyPuppetService)
+          metrics-service (tk-services/get-service this :JRubyMetricsService)]
+      (request-handler-core/build-request-handler handler
+                                                  jruby-service
+                                                  metrics-service
+                                                  config
+                                                  current-code-id)))
   (handle-request
     [this request]
     (let [handler (:request-handler (tk-services/service-context this))]
